@@ -3,7 +3,8 @@
    [br.com.ianffcs.apache-http-client-ring-adapter.jetty-client :refer [->http-client]]
    [clj-http.client :as client]
    [clojure.test :refer [deftest is testing]]
-   [clojure.data.json :as json])
+   [clojure.data.json :as json]
+   [ring.core.protocols :as ring.protocols])
   (:import [java.io ByteArrayInputStream]))
 
 (defn clj-http-mocked-req [mocked-client req]
@@ -43,7 +44,7 @@
           mocked-client (->http-client (fn [request]
                                          (deliver *body (-> request :body))
                                          (deliver *request (dissoc request :body))
-                                         {:body    @*body
+                                         {:body    (slurp @*body)
                                           :headers {"hello" "world"}
                                           :status  200}))]
       (is (= {:body                  {:msg "hello body"}
@@ -71,3 +72,43 @@
                                      .getBytes
                                      ByteArrayInputStream.)})
                  (update :body json/read-str :key-fn keyword)))))))
+
+(deftest check-ring-spec-keys
+  (let [*req (promise)
+        http-client (->http-client (fn [req]
+                                     (deliver *req (dissoc req :body))
+                                     {:status 202}))]
+    (client/request {:method      :post
+                     :url         "https://example.com/bar?car=33"
+                     :body        "{\"Hello\": 42}"
+                     :headers     {"Hello" "World"}
+                     :http-client http-client})
+    (is (= {:request-method :post,
+            :uri            "/bar"
+            :scheme         :https
+            :protocol       "HTTP/1.1"
+            :query-string   "car=33"
+            :server-port    -1
+            :server-name    "example.com"
+            ;; :remote-addr ""
+            :headers        {"Connection"      "close"
+                             "Hello"           "World"
+                             "Accept-Encoding" "gzip, deflate"}}
+           @*req))))
+
+
+(deftest check-ring-spec-response-body
+  (let [*req (promise)
+        http-client (->http-client (fn [req]
+                                     (deliver *req (dissoc req :body))
+                                     {:body   (reify ring.protocols/StreamableResponseBody
+                                                (write-body-to-stream [this response output-stream]
+                                                  (.write output-stream (.getBytes "Hello!"))
+                                                  (.close output-stream)))
+                                      :status 202}))]
+    (is (= "Hello!"
+           (:body (client/request {:method      :post
+                                   :url         "https://example.com/bar?car=33"
+                                   :body        "{\"Hello\": 42}"
+                                   :headers     {"Hello" "World"}
+                                   :http-client http-client}))))))

@@ -1,6 +1,7 @@
 (ns br.com.ianffcs.apache-http-client-ring-adapter.jetty-client
   (:require [clojure.string :as string]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [ring.core.protocols])
   (:import (org.apache.http.client.methods CloseableHttpResponse
                                     HttpRequestBase
                                     HttpEntityEnclosingRequestBase)
@@ -10,7 +11,10 @@
                             HttpEntity
                             Header)
            (org.apache.http.impl.client CloseableHttpClient)
-           (org.eclipse.jetty.http HttpStatus)))
+           (org.eclipse.jetty.http HttpStatus)
+           (java.io ByteArrayOutputStream)))
+
+(set! *warn-on-reflection* true)
 
 (defn format-headers [^HttpRequestBase request]
   (->> (for [^Header header (.getAllHeaders request)]
@@ -26,31 +30,35 @@
     (doExecute [_target ^HttpRequestBase request _context]
       (let [method                        (keyword (string/lower-case (.getMethod request)))
             uri                           (.getURI request)
-            {:keys [port host path]}      (bean uri)
+            {:keys [port host path query scheme]} (bean uri)
             headers                       (format-headers request)
             req-map                       {:request-method method
-                                           :path-info      path
-                                           :port           port
-                                           :host           host
+                                           :uri            path
+                                           :server-port    port
+                                           :query-string   query
+                                           :server-name    host
+                                           :protocol       (str (.getProtocolVersion request))
+                                           :scheme         (keyword scheme)
                                            :headers        headers}
-            {:keys [headers status body]} (ring-handler
+            {:keys [headers status body]
+             :as response}                (ring-handler
                                            (cond-> req-map
                                              (instance? HttpEntityEnclosingRequestBase request)
                                              (assoc :body
                                                     (some-> ^HttpEntityEnclosingRequestBase request
                                                             .getEntity
-                                                            .getContent
-                                                            slurp))))]
+                                                            .getContent))))
+            response-baos (ByteArrayOutputStream.)
+            _ (ring.core.protocols/write-body-to-stream body response response-baos)
+            body-as-bytes (.toByteArray response-baos)]
         (reify CloseableHttpResponse
-
           (close [_this])
-
           (getEntity [_this]
             (reify HttpEntity
               (getContent [_this]
-                (io/input-stream (.getBytes body)))
+                (io/input-stream body-as-bytes))
               (getContentLength [_this]
-                (count body))
+                (count body-as-bytes))
               (isRepeatable [_this]
                 false)
               (isStreaming [_this]
