@@ -12,7 +12,7 @@
 * Add to your `deps.edn`
 ```clojure
 br.com.ianffcs/apache-http-client-ring-adapter {:git/url "https://github.com/ianffcs/apache-http-client-ring-adapter.git"
-                                                :sha     "354fd46fea55671a9c8ef2e12075d48034309306"}
+                                                :sha     "f576b007fc38283d754fc610808ec48aa528714f"}
 ```
 
 * require `->http-client`
