@@ -7,22 +7,27 @@
                                     HttpEntityEnclosingRequestBase)
            (org.apache.http HeaderIterator
                             StatusLine
-                            ProtocolVersion
                             HttpEntity
                             Header)
            (org.apache.http.impl.client CloseableHttpClient)
            (org.eclipse.jetty.http HttpStatus)
-           (java.io ByteArrayOutputStream)))
+           (java.io ByteArrayOutputStream)
+           (java.net UnknownHostException ConnectException)))
 
 (set! *warn-on-reflection* true)
 
 (defn format-headers [^HttpRequestBase request]
-  (->> (for [^Header header (.getAllHeaders request)]
-         [(->> (string/split (.getName header) #"-")
-               (map string/capitalize)
-               (string/join "-"))
-          (.getValue header)])
-       (into {})))
+  (transduce (map (fn [^Header header]
+                    [(string/lower-case (.getName header))
+                     (.getValue header)]))
+             (fn
+               ([] {})
+               ([result] result)
+               ([result [k v]]
+                (if (contains? result k)
+                  (update result k str "," v)
+                  (assoc result k v))))
+             (.getAllHeaders request)))
 
 (defn ->http-client
   [ring-handler]
@@ -37,6 +42,7 @@
                                            :server-port    port
                                            :query-string   query
                                            :server-name    host
+                                           :remote-addr    "127.0.0.1"
                                            :protocol       (str (.getProtocolVersion request))
                                            :scheme         (keyword scheme)
                                            :headers        headers}
@@ -71,10 +77,13 @@
               (getReasonPhrase [_this] (HttpStatus/getMessage status))
               (getStatusCode [_this] status)
               (getProtocolVersion [_this]
-                (ProtocolVersion. "HTTP" 1 1))))
+                (.getProtocolVersion request))))
 
           (headerIterator [_this]
-            (let [headers (atom (for [[k v] headers]
+            (let [headers (atom (for [[k vs] headers
+                                      v (if (coll? vs)
+                                          vs
+                                          [vs])]
                                   (reify Header
                                     (getName [_this] k)
                                     (getValue [_this] (str v)))))]
@@ -82,6 +91,23 @@
                 (hasNext [_this] (not (empty? @headers)))
                 (next [_this]
                   (ffirst (swap-vals! headers rest)))))))))))
+
+(defn unknown-host-exception
+  "When can't resolve the host in DNS"
+  [{:keys [server-name]}]
+  (UnknownHostException. server-name))
+
+
+(defn offline-exception
+  "When can't resolve the name because it's offline"
+  [{:keys [server-name]}]
+  (UnknownHostException. (str server-name ": Temporary failure in name resolution")))
+
+(defn connect-exception
+  "When java can't open a socket in the address"
+  [_]
+  (ConnectException. "Connection refused"))
+
 
 #_(comment
     (-> '[clj-http.client :refer [request]]
