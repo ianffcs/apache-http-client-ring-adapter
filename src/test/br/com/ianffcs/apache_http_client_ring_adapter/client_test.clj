@@ -90,10 +90,10 @@
             :query-string   "car=33"
             :server-port    -1
             :server-name    "example.com"
-            ;; :remote-addr ""
-            :headers        {"Connection"      "close"
-                             "Hello"           "World"
-                             "Accept-Encoding" "gzip, deflate"}}
+            :remote-addr    "127.0.0.1"
+            :headers        {"connection"      "close"
+                             "hello"           "World"
+                             "accept-encoding" "gzip, deflate"}}
            @*req))))
 
 
@@ -105,10 +105,28 @@
                                                 (write-body-to-stream [this response output-stream]
                                                   (.write output-stream (.getBytes "Hello!"))
                                                   (.close output-stream)))
-                                      :status 202}))]
+                                      :status 200}))]
     (is (= "Hello!"
            (:body (client/request {:method      :post
                                    :url         "https://example.com/bar?car=33"
                                    :body        "{\"Hello\": 42}"
                                    :headers     {"Hello" "World"}
                                    :http-client http-client}))))))
+
+
+
+(deftest double-header
+  (let [*headers (promise)
+        http-client (->http-client (fn [{:keys [headers]}]
+                                     (deliver *headers headers)
+                                     {:headers {"Hey" ["a" "b"]}
+                                      :status  202}))]
+    (is (= {"Hey" ["a" "b"]}
+           (:headers (client/request {:method      :get
+                                      :url         "https://example.com/bar?car=33"
+                                      :headers     {"Hello" ["World" "x"]}
+                                      :http-client http-client}))))
+    (is (= {"accept-encoding" "gzip, deflate"
+            "connection"      "close"
+            "hello"           "World,x"}
+           @*headers))))
