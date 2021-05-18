@@ -1,6 +1,6 @@
-(ns br.com.ianffcs.apache-http-client-ring-adapter.jetty-client-test
+(ns br.com.ianffcs.apache-http-client-ring-adapter.client-test
   (:require
-   [br.com.ianffcs.apache-http-client-ring-adapter.jetty-client :refer [->http-client]]
+   [br.com.ianffcs.apache-http-client-ring-adapter.client :refer [->http-client]]
    [clj-http.client :as client]
    [clojure.test :refer [deftest is testing]]
    [clojure.data.json :as json]
