@@ -16,10 +16,11 @@ br.com.ianffcs/apache-http-client-ring-adapter {:git/url "https://github.com/ian
 ```
 
 * require `->http-client`
+
 ```clojure
-(require '[br.com.ianffcs.apache-http-client-ring-adapter.jetty-client :refer [->http-client]])
+(require '[br.com.ianffcs.apache-http-client-ring-adapter.client :refer [->http-client]])
 
 (->http-client (fn [req]
                  {:status 200
-                  :body "mocked response"}))
+                  :body   "mocked response"}))
 ```

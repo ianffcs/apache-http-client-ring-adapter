@@ -1,10 +1,10 @@
-(ns br.com.ianffcs.apache-http-client-ring-adapter.jetty-client-test
-  (:require
-   [br.com.ianffcs.apache-http-client-ring-adapter.jetty-client :refer [->http-client]]
-   [clj-http.client :as client]
-   [clojure.test :refer [deftest is testing]]
-   [clojure.data.json :as json])
-  (:import [java.io ByteArrayInputStream]))
+  (ns br.com.ianffcs.apache-http-client-ring-adapter.client-test
+    (:require
+     [br.com.ianffcs.apache-http-client-ring-adapter.client :refer [->http-client]]
+     [clj-http.client :as client]
+     [clojure.test :refer [deftest is testing]]
+     [clojure.data.json :as json])
+    (:import [java.io ByteArrayInputStream]))
 
 (defn clj-http-mocked-req [mocked-client req]
   (-> req

@@ -1,4 +1,4 @@
-(ns br.com.ianffcs.apache-http-client-ring-adapter.jetty-client
+(ns br.com.ianffcs.apache-http-client-ring-adapter.client
   (:require [clojure.string :as string]
             [clojure.java.io :as io])
   (:import (org.apache.http.client.methods CloseableHttpResponse
