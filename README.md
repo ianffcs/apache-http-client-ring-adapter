@@ -5,7 +5,7 @@
   
 ## Examples of usage with clj-http
 
-* in [tests](br/com/ianffcs/apache_http_client_ring_adapter/client_test.clj)
+* in [tests](https://github.com/ianffcs/apache-http-client-ring-adapter/blob/main/src/test/br/com/ianffcs/apache_http_client_ring_adapter/client_test.clj)
 
 ## Usage
 
