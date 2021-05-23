@@ -1,10 +1,11 @@
 (ns br.com.ianffcs.apache-http-client-ring-adapter.client-test
   (:require
-   [br.com.ianffcs.apache-http-client-ring-adapter.client :refer [->http-client]]
-   [clj-http.client :as client]
-   [clojure.test :refer [deftest is testing]]
-   [clojure.data.json :as json]
-   [ring.core.protocols :as ring.protocols])
+    [br.com.ianffcs.apache-http-client-ring-adapter.client :refer [->http-client]]
+    [clj-http.client :as client]
+    [clojure.test :refer [deftest is testing]]
+    [clojure.data.json :as json]
+    [ring.core.protocols :as ring.protocols]
+    [clojure.string :as string])
   (:import [java.io ByteArrayInputStream]))
 
 (defn clj-http-mocked-req [mocked-client req]
@@ -130,3 +131,30 @@
             "connection"      "close"
             "hello"           "World,x"}
            @*headers))))
+
+(defn check-token
+  [http-client token]
+  (let [response (client/get (str "https://api.example.com/check-token?token=" token)
+                             {:http-client http-client
+                              :as          :json})]
+    (get-in response [:body :is_valid])))
+
+(deftest check-token-example
+  (let [mock-api-handler (fn [{:keys [uri server-name query-string scheme request-method headers]
+                               :as   request}]
+                           (if-let [token (second (re-find #"token=([a-z]+)"
+                                                           query-string))]
+                             {:body    (json/write-str {:is_valid (string/includes? token "b")})
+                              :headers {"Content-Type" "application/json"}
+                              :status  200}
+                             ;; missing query
+                             {:status 400}))
+        http-client (->http-client mock-api-handler)]
+    (is (true? (check-token http-client "abc")))
+    (is (false? (check-token http-client "efd")))
+    (is (= "clj-http: status 400"
+           (try
+             (check-token http-client "123")
+             (catch Throwable ex
+               (ex-message ex)))))))
+
