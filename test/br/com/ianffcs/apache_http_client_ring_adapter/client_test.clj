@@ -2,37 +2,35 @@
   (:require
     [br.com.ianffcs.apache-http-client-ring-adapter.client :refer [->http-client]]
     [clj-http.client :as client]
-    [clojure.test :refer [deftest is testing]]
     [clojure.data.json :as json]
-    [ring.core.protocols :as ring.protocols]
-    [clojure.string :as string])
-  (:import [java.io ByteArrayInputStream]))
+    [clojure.java.io :as io]
+    [clojure.string :as string]
+    [clojure.test :refer [deftest is testing]]
+    [ring.core.protocols :as ring.protocols]))
 
 (defn clj-http-mocked-req [mocked-client req]
   (-> req
       (assoc :http-client mocked-client)
       client/request
-      (dissoc :request-time)))
+      (dissoc :request-time :http-client)))
 
 (deftest ->http-client-test-clj-http
   (testing "simple get"
     (let [mocked-client (->http-client (fn [req]
-                                         (prn req)
                                          {:body    "1337"
                                           :headers {"hello" "world"}
                                           :status  202}))]
-      (is (= {:cached                nil,
-              :repeatable?           false,
-              :protocol-version      {:name "HTTP", :major 1, :minor 1},
-              :streaming?            false,
-              :http-client           mocked-client
-              :chunked?              false,
-              :reason-phrase         "Accepted",
-              :headers               {"hello" "world"},
-              :orig-content-encoding nil,
-              :status                202,
-              :length                4,
-              :body                  "1337",
+      (is (= {:body                  "1337"
+              :cached                nil
+              :chunked?              false
+              :headers               {"hello" "world"}
+              :length                4
+              :orig-content-encoding nil
+              :protocol-version      {:name "HTTP", :major 1, :minor 1}
+              :reason-phrase         "Accepted"
+              :repeatable?           false
+              :status                202
+              :streaming?            false
               :trace-redirects       []}
              (clj-http-mocked-req
                mocked-client
@@ -40,8 +38,8 @@
                 :url    "https://test.com.br/foo/bar"})))))
 
   (testing "simple post request"
-    (let [*body         (promise)
-          *request      (promise)
+    (let [*body (promise)
+          *request (promise)
           mocked-client (->http-client (fn [request]
                                          (deliver *body (-> request :body))
                                          (deliver *request (dissoc request :body))
@@ -52,7 +50,6 @@
               :cached                nil
               :chunked?              false
               :headers               {"hello" "world"}
-              :http-client mocked-client
               :length                20
               :orig-content-encoding nil
               :protocol-version      {:major 1
@@ -65,13 +62,13 @@
               :trace-redirects       []}
              (-> (clj-http-mocked-req
                    mocked-client
-                   {:method      :post
-                    :url         "https://test.com.br/foo/bar"
-                    :headers     {"hello" "header"}
-                    :body        (-> {:msg "hello body"}
-                                     json/write-str
-                                     .getBytes
-                                     ByteArrayInputStream.)})
+                   {:method  :post
+                    :url     "https://test.com.br/foo/bar"
+                    :headers {"hello" "header"}
+                    :body    (-> {:msg "hello body"}
+                                 json/write-str
+                                 .getBytes
+                                 io/input-stream)})
                  (update :body json/read-str :key-fn keyword)))))))
 
 (deftest check-ring-spec-keys
@@ -89,9 +86,7 @@
             :scheme         :https
             :protocol       "HTTP/1.1"
             :query-string   "car=33"
-            :server-port    -1
             :server-name    "example.com"
-            :remote-addr    "127.0.0.1"
             :headers        {"connection"      "close"
                              "hello"           "World"
                              "accept-encoding" "gzip, deflate"}}
