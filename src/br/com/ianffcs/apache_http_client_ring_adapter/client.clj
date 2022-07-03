@@ -1,62 +1,73 @@
 (ns br.com.ianffcs.apache-http-client-ring-adapter.client
-  (:require [clojure.string :as string]
-            [clojure.java.io :as io]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as string]
             [ring.core.protocols])
-  (:import (org.apache.http.client.methods CloseableHttpResponse
-                                    HttpRequestBase
-                                    HttpEntityEnclosingRequestBase)
-           (org.apache.http HeaderIterator
-                            StatusLine
-                            HttpEntity
-                            Header)
+  (:import (java.io ByteArrayOutputStream)
+           (java.net ConnectException URI UnknownHostException)
+           (org.apache.http Header HeaderIterator HttpEntity HttpHost HttpRequest StatusLine)
+           (org.apache.http.client.methods CloseableHttpResponse
+                                           HttpEntityEnclosingRequestBase)
+           (org.apache.http.impl EnglishReasonPhraseCatalog)
            (org.apache.http.impl.client CloseableHttpClient)
-           (org.eclipse.jetty.http HttpStatus)
-           (java.io ByteArrayOutputStream)
-           (java.net UnknownHostException ConnectException)))
+           (org.apache.http.protocol HttpContext)))
 
 (set! *warn-on-reflection* true)
-
-(defn format-headers [^HttpRequestBase request]
-  (transduce (map (fn [^Header header]
-                    [(string/lower-case (.getName header))
-                     (.getValue header)]))
-             (fn
-               ([] {})
-               ([result] result)
-               ([result [k v]]
-                (if (contains? result k)
-                  (update result k str "," v)
-                  (assoc result k v))))
-             (.getAllHeaders request)))
 
 (defn ->http-client
   [ring-handler]
   (proxy [CloseableHttpClient] []
-    (doExecute [_target ^HttpRequestBase request _context]
-      (let [method                        (keyword (string/lower-case (.getMethod request)))
-            uri                           (.getURI request)
-            {:keys [port host path query scheme]} (bean uri)
-            headers                       (format-headers request)
-            req-map                       {:request-method method
-                                           :uri            path
-                                           :server-port    port
-                                           :query-string   query
-                                           :server-name    host
-                                           :remote-addr    "127.0.0.1"
-                                           :protocol       (str (.getProtocolVersion request))
-                                           :scheme         (keyword scheme)
-                                           :headers        headers}
+    (doExecute [^HttpHost target ^HttpRequest http-request ^HttpContext _context]
+      (let [request-line (.getRequestLine http-request)
+            method (-> request-line
+                       .getMethod
+                       string/lower-case
+                       keyword)
+            request-uri (some-> request-line
+                                .getUri
+                                URI/create)
+            protocol (.getProtocolVersion request-line)
+            port (.getPort target)
+            headers (reduce (fn [headers ^Header header]
+                              (update headers
+                                      (string/lower-case (.getName header))
+                                      (fn [v]
+                                        (str (when v
+                                               (str v ","))
+                                             (.getValue header)))))
+                            {}
+                            (.getAllHeaders http-request))
+            ring-request (merge
+                           {}
+                           (when method
+                             {:request-method method})
+                           (when-let [uri (.getPath request-uri)]
+                             {:uri uri})
+                           (when (pos? port)
+                             {:server-port port})
+                           (when-let [query-string (.getQuery request-uri)]
+                             {:query-string query-string})
+                           (when-let [server-name (.getHost request-uri)]
+                             {:server-name server-name})
+                           (when-let [scheme (some-> target .getSchemeName keyword)]
+                             {:scheme scheme})
+                           (when-let [remote-addr (.getAddress target)]
+                             {:remote-addr (str remote-addr)})
+                           (when protocol
+                             {:protocol (str protocol)})
+                           (when (seq headers)
+                             {:headers headers})
+                           (when (instance? HttpEntityEnclosingRequestBase http-request)
+                             (some->> ^HttpEntityEnclosingRequestBase http-request
+                                      .getEntity
+                                      .getContent
+                                      (hash-map :body))))
             {:keys [headers status body]
-             :as response}                (ring-handler
-                                           (cond-> req-map
-                                             (instance? HttpEntityEnclosingRequestBase request)
-                                             (assoc :body
-                                                    (some-> ^HttpEntityEnclosingRequestBase request
-                                                            .getEntity
-                                                            .getContent))))
-            response-baos (ByteArrayOutputStream.)
-            _ (ring.core.protocols/write-body-to-stream body response response-baos)
-            body-as-bytes (.toByteArray response-baos)]
+             :as   response} (ring-handler ring-request)
+            body-as-bytes (-> (ByteArrayOutputStream.)
+                              (doto
+                                (->> (ring.core.protocols/write-body-to-stream body response))
+                                .flush)
+                              .toByteArray)]
         (reify CloseableHttpResponse
           (close [_this])
           (getEntity [_this]
@@ -71,14 +82,11 @@
                 false)
               (isChunked [_this]
                 false)))
-
           (getStatusLine [_this]
             (reify StatusLine
-              (getReasonPhrase [_this] (HttpStatus/getMessage status))
+              (getReasonPhrase [_this] (.getReason EnglishReasonPhraseCatalog/INSTANCE status nil))
               (getStatusCode [_this] status)
-              (getProtocolVersion [_this]
-                (.getProtocolVersion request))))
-
+              (getProtocolVersion [_this] protocol)))
           (headerIterator [_this]
             (let [headers (atom (for [[k vs] headers
                                       v (if (coll? vs)
