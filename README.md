@@ -15,7 +15,7 @@ This project intends to facilitate the creation of `org.apache.http.client.Close
 * Add to your `deps.edn`
 ```clojure
 br.com.ianffcs/apache-http-client-ring-adapter {:git/url "https://github.com/ianffcs/apache-http-client-ring-adapter.git"
-                                                :sha     "659d73de929e2194edcbb626c5cf5679e5f91896"}
+                                                :sha     "7fa01cb540b8cbc35d51be2a22e9c66db948b731"}
 ```
 
 * Require it
