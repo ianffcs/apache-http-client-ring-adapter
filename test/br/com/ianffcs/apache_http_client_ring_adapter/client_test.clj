@@ -15,7 +15,7 @@
       client/request
       (dissoc :request-time :http-client)))
 
-(deftest ->http-client-test-clj-http-test
+(deftest ->http-client-test-clj-http
   (testing "simple get"
     (let [mocked-client (->http-client {:ring-handler (fn [_req]
                                                         {:body    "1337"
@@ -72,7 +72,7 @@
                                  io/input-stream)})
                  (update :body json/read-str :key-fn keyword)))))))
 
-(deftest check-ring-spec-keys-test
+(deftest check-ring-spec-keys
   (let [*req (promise)
         http-client (->http-client {:ring-handler (fn [req]
                                                     (deliver *req (dissoc req :body))
@@ -94,7 +94,7 @@
            @*req))))
 
 
-(deftest check-ring-spec-response-body-test
+(deftest check-ring-spec-response-body
   (let [*req (promise)
         http-client (->http-client {:ring-handler (fn [req]
                                                     (deliver *req (dissoc req :body))
@@ -112,7 +112,7 @@
 
 
 
-(deftest double-header-test
+(deftest double-header
   (let [*headers (promise)
         http-client (->http-client {:ring-handler (fn [{:keys [headers]}]
                                                     (deliver *headers headers)
@@ -135,7 +135,7 @@
                               :as          :json})]
     (get-in response [:body :is_valid])))
 
-(deftest check-token-example-test
+(deftest check-token-example
   (let [mock-api-handler (fn [{:keys [query-string]}]
                            (if-let [token (second (re-find #"token=([a-z]+)"
                                                            query-string))]
@@ -153,9 +153,9 @@
              (catch Throwable ex
                (ex-message ex)))))))
 
-(deftest retry-execute-simple-test
+(deftest retry-execute-simple
   (let [counter (atom 0)
-        max-retries 4
+        max-retries 3
         http-client (->http-client
                       {:retry-interval 0
                        :max-retries max-retries
@@ -166,10 +166,11 @@
                                                              .getStatusCode)]
                                          (if (and (= 404 resp-status)
                                                   (> max-retries cnt))
-                                           (do (swap! counter inc)
+                                           (do (prn "Retrying..." cnt)
                                                true)
                                            false)))
                        :ring-handler (fn [_req]
+                                       (swap! counter inc)
                                        {:status 404
                                         :body   "Can't find"})})]
     (is (= "clj-http: status 404" (try (client/request {:method      :get
@@ -177,4 +178,4 @@
                                                         :http-client http-client})
                                        (catch Throwable t
                                          (ex-message t)))))
-    (is (= (dec max-retries) @counter))))
+    (is (= max-retries (dec @counter)))))

@@ -104,13 +104,12 @@
 (defn ->http-client
   [{:keys [ring-handler
            retry-fn
-           max-retries]
-    :or {max-retries 3}
+           max-retries
+           retry-interval]
+    :or   {max-retries 3
+           retry-interval 0}
     :as   http-mock-map}]
-  (let [^ServiceUnavailableRetryStrategy
-        retry-strategy (when retry-fn
-                         (->service-unavailable-retry-strategy http-mock-map))
-        http-client-executed (proxy [CloseableHttpClient] []
+  (let [http-client-executed (proxy [CloseableHttpClient] []
                                (getConnectionManager [_] nil)
                                (close [_])
                                (doExecute [^HttpHost target
@@ -136,53 +135,39 @@
                                                                         (.getValue header)))))
                                                        {}
                                                        (.getAllHeaders http-request))
-                                       ring-req-map {:method       method
-                                                     :http-request http-request
-                                                     :request-uri  request-uri
-                                                     :target       target
-                                                     :protocol     protocol
-                                                     :headers      headers
-                                                     :port         port}
-                                       {:keys [headers
-                                               status
-                                               body]
-                                        :as   response} (-> ring-req-map
-                                                            ->ring-request
-                                                            ring-handler)
-                                       body-as-bytes (-> (ByteArrayOutputStream.)
-                                                         (doto
-                                                           (->> (ring.core.protocols/write-body-to-stream body response))
-                                                           .flush)
-                                                         .toByteArray)]
-                                   (if retry-strategy
-                                     (loop [retry-count 0
-                                            last-response nil]
-                                       (let [response (if (zero? retry-count)
-                                                        (-> ring-req-map
-                                                            ->ring-request
-                                                            ring-handler)
-                                                        last-response)
-                                             {:keys [status]} response]
-                                         (if (and (< retry-count max-retries)
-                                                  (.retryRequest retry-strategy
-                                                                 (->http-response {:body-as-bytes body-as-bytes
-                                                                                   :status        status
-                                                                                   :protocol      protocol
-                                                                                   :headers       headers})
-                                                                 retry-count
-                                                                 context))
-                                           (do (Thread/sleep ^long (.getRetryInterval retry-strategy))
-                                               (recur (inc retry-count) response)))))
-                                     (->http-response {:body-as-bytes body-as-bytes
-                                                       :status        status
-                                                       :protocol      protocol
-                                                       :target        target
-                                                       :headers       headers})))))]
-    (if retry-strategy
-      (-> (HttpClients/custom)
-          (.setServiceUnavailableRetryStrategy retry-strategy)
-          (.build))
-      http-client-executed)))
+                                       ring-request (->ring-request {:method       method
+                                                                     :http-request http-request
+                                                                     :request-uri  request-uri
+                                                                     :target       target
+                                                                     :protocol     protocol
+                                                                     :headers      headers
+                                                                     :port         port})]
+                                   (loop [retry-count 0]
+                                     (let [{:keys [headers
+                                                   status
+                                                   body]
+                                            :as   response} (ring-handler ring-request)
+                                           body-as-bytes (-> (ByteArrayOutputStream.)
+                                                             (doto
+                                                               (->> (ring.core.protocols/write-body-to-stream body response))
+                                                               .flush)
+                                                             .toByteArray)]
+                                       (if (and retry-fn
+                                                (< retry-count max-retries)
+                                                (retry-fn (->http-response {:body-as-bytes body-as-bytes
+                                                                            :status        status
+                                                                            :protocol      protocol
+                                                                            :headers       headers})
+                                                          retry-count
+                                                          context))
+                                         (do (Thread/sleep ^long retry-interval)
+                                             (recur (inc retry-count)))
+                                         (->http-response {:body-as-bytes body-as-bytes
+                                                           :status        status
+                                                           :protocol      protocol
+                                                           :target        target
+                                                           :headers       headers})))))))]
+    http-client-executed))
 
 (defn unknown-host-exception
   "When can't resolve the host in DNS"
@@ -229,29 +214,29 @@
                                          :method      :get
                                          :http-client mocked-client})))))
              (testing "simple get"
-                      (let [mocked-client (->http-client (fn [req]
-                                                           (def _r req)
-                                                           {:body    "ian"
-                                                            :headers {"hello" "world"}
-                                                            :status  202}))]
-                        (is (= {:cached                nil,
-                                :request-time          1,
-                                :repeatable?           false,
-                                :protocol-version      {:name "HTTP", :major 1, :minor 1},
-                                :streaming?            false,
-                                :http-client           mocked-client
-                                :chunked?              false,
-                                :reason-phrase         "Accepted",
-                                :headers               {"hello" "world"},
-                                :orig-content-encoding nil,
-                                :status                202,
-                                :length                3,
-                                :body                  "ian",
-                                :trace-redirects       []}
-                               (request {:url         "https://souenzzo.com.br/foo/bar"
-                                         :method      :post
-                                         :body        {}
-                                         :http-client mocked-client})))))))
+                             (let [mocked-client (->http-client (fn [req])
+                                                                                (def _r req)
+                                                                                {:body    "ian"}
+                                                                                 :headers {"hello" "world"}
+                                                                                 :status  202)])
+                               (is (= {:cached                nil,
+                                                   :request-time          1,
+                                                   :repeatable?           false,
+                                                   :protocol-version      {:name "HTTP", :major 1, :minor 1},
+                                                   :streaming?            false,
+                                                   :http-client           mocked-client
+                                                   :chunked?              false,
+                                                   :reason-phrase         "Accepted",
+                                                   :headers               {"hello" "world"},
+                                                   :orig-content-encoding nil,
+                                                   :status                202,
+                                                   :length                3,
+                                                   :body                  "ian",
+                                                   :trace-redirects       []}))
+                                      (request {:url         "https://souenzzo.com.br/foo/bar"
+                                                            :method      :post
+                                                            :body        {}
+                                                            :http-client mocked-client}))))
 
 
 
