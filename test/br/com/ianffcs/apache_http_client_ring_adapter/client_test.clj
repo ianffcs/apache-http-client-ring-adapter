@@ -17,10 +17,10 @@
 
 (deftest ->http-client-test-clj-http
   (testing "simple get"
-    (let [mocked-client (->http-client {:ring-handler (fn [_req]
-                                                        {:body    "1337"
-                                                         :headers {"hello" "world"}
-                                                         :status  202})})]
+    (let [mocked-client (->http-client (fn [_req]
+                                         {:body    "1337"
+                                          :headers {"hello" "world"}
+                                          :status  202}))]
       (is (= {:body                  "1337"
               :cached                nil
               :chunked?              false
@@ -41,12 +41,12 @@
   (testing "simple post request"
     (let [*body (promise)
           *request (promise)
-          mocked-client (->http-client {:ring-handler (fn [request]
-                                                        (deliver *body (-> request :body))
-                                                        (deliver *request (dissoc request :body))
-                                                        {:body    (slurp @*body)
-                                                         :headers {"hello" "world"}
-                                                         :status  200})})]
+          mocked-client (->http-client (fn [request]
+                                         (deliver *body (-> request :body))
+                                         (deliver *request (dissoc request :body))
+                                         {:body    (slurp @*body)
+                                          :headers {"hello" "world"}
+                                          :status  200}))]
       (is (= {:body                  {:msg "hello body"}
               :cached                nil
               :chunked?              false
@@ -74,9 +74,9 @@
 
 (deftest check-ring-spec-keys
   (let [*req (promise)
-        http-client (->http-client {:ring-handler (fn [req]
-                                                    (deliver *req (dissoc req :body))
-                                                    {:status 202})})]
+        http-client (->http-client (fn [req]
+                                     (deliver *req (dissoc req :body))
+                                     {:status 202}))]
     (client/request {:method      :post
                      :url         "https://example.com/bar?car=33"
                      :body        "{\"Hello\": 42}"
@@ -96,13 +96,13 @@
 
 (deftest check-ring-spec-response-body
   (let [*req (promise)
-        http-client (->http-client {:ring-handler (fn [req]
-                                                    (deliver *req (dissoc req :body))
-                                                    {:body   (reify ring.protocols/StreamableResponseBody
-                                                               (write-body-to-stream [_this _response output-stream]
-                                                                 (.write output-stream (.getBytes "Hello!"))
-                                                                 (.close output-stream)))
-                                                     :status 200})})]
+        http-client (->http-client (fn [req]
+                                     (deliver *req (dissoc req :body))
+                                     {:body   (reify ring.protocols/StreamableResponseBody
+                                                (write-body-to-stream [_this _response output-stream]
+                                                  (.write output-stream (.getBytes "Hello!"))
+                                                  (.close output-stream)))
+                                      :status 200}))]
     (is (= "Hello!"
            (:body (client/request {:method      :post
                                    :url         "https://example.com/bar?car=33"
@@ -114,10 +114,10 @@
 
 (deftest double-header
   (let [*headers (promise)
-        http-client (->http-client {:ring-handler (fn [{:keys [headers]}]
-                                                    (deliver *headers headers)
-                                                    {:headers {"Hey" ["a" "b"]}
-                                                     :status  202})})]
+        http-client (->http-client (fn [{:keys [headers]}]
+                                     (deliver *headers headers)
+                                     {:headers {"Hey" ["a" "b"]}
+                                      :status  202}))]
     (is (= {"Hey" ["a" "b"]}
            (:headers (client/request {:method      :get
                                       :url         "https://example.com/bar?car=33"
@@ -144,7 +144,7 @@
                               :status  200}
                              ;; missing query
                              {:status 400}))
-        http-client (->http-client {:ring-handler mock-api-handler})]
+        http-client (->http-client mock-api-handler)]
     (is (true? (check-token http-client "abc")))
     (is (false? (check-token http-client "efd")))
     (is (= "clj-http: status 400"
@@ -156,23 +156,22 @@
 (deftest retry-execute-simple
   (let [counter (atom 0)
         max-retries 3
-        http-client (->http-client
-                      {:retry-interval 0
-                       :max-retries max-retries
-                       :retry-fn     (fn retry-fn
-                                       [^HttpResponse resp cnt _ctx]
-                                       (let [resp-status (-> resp
-                                                             .getStatusLine
-                                                             .getStatusCode)]
-                                         (if (and (= 404 resp-status)
-                                                  (> max-retries cnt))
-                                           (do (prn "Retrying..." cnt)
-                                               true)
-                                           false)))
-                       :ring-handler (fn [_req]
-                                       (swap! counter inc)
-                                       {:status 404
-                                        :body   "Can't find"})})]
+        http-client (->http-client (fn [_req]
+                                     (swap! counter inc)
+                                     {:status 404
+                                      :body   "Can't find"})
+                                   {:retry-interval 0
+                                    :max-retries    max-retries
+                                    :retry-fn       (fn retry-fn
+                                                      [^HttpResponse resp cnt _ctx]
+                                                      (let [resp-status (-> resp
+                                                                            .getStatusLine
+                                                                            .getStatusCode)]
+                                                        (if (and (= 404 resp-status)
+                                                                 (> max-retries cnt))
+                                                          (do (prn "Retrying..." cnt)
+                                                              true)
+                                                          false)))})]
     (is (= "clj-http: status 404" (try (client/request {:method      :get
                                                         :url         "https://example.com/bar?car=33"
                                                         :http-client http-client})

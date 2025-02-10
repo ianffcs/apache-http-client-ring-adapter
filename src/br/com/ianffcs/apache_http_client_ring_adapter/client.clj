@@ -102,13 +102,12 @@
       (or retry-interval 500))))
 
 (defn ->http-client
-  [{:keys [ring-handler
-           retry-fn
-           max-retries
-           retry-interval]
-    :or   {max-retries 3
-           retry-interval 0}
-    :as   http-mock-map}]
+  [ring-handler & [{:keys [retry-fn
+                           max-retries
+                           retry-interval]
+                    :or   {max-retries    3
+                           retry-interval 0}
+                    :as   http-mock-map}]]
   (let [http-client-executed (proxy [CloseableHttpClient] []
                                (getConnectionManager [_] nil)
                                (close [_])
@@ -214,29 +213,29 @@
                                          :method      :get
                                          :http-client mocked-client})))))
              (testing "simple get"
-                             (let [mocked-client (->http-client (fn [req])
-                                                                                (def _r req)
-                                                                                {:body    "ian"}
-                                                                                 :headers {"hello" "world"}
-                                                                                 :status  202)])
-                               (is (= {:cached                nil,
-                                                   :request-time          1,
-                                                   :repeatable?           false,
-                                                   :protocol-version      {:name "HTTP", :major 1, :minor 1},
-                                                   :streaming?            false,
-                                                   :http-client           mocked-client
-                                                   :chunked?              false,
-                                                   :reason-phrase         "Accepted",
-                                                   :headers               {"hello" "world"},
-                                                   :orig-content-encoding nil,
-                                                   :status                202,
-                                                   :length                3,
-                                                   :body                  "ian",
-                                                   :trace-redirects       []}))
-                                      (request {:url         "https://souenzzo.com.br/foo/bar"
-                                                            :method      :post
-                                                            :body        {}
-                                                            :http-client mocked-client}))))
+                      (let [mocked-client (->http-client (fn [req])
+                                                         (def _r req)
+                                                         {:body "ian"}
+                                                         :headers {"hello" "world"}
+                                                         :status 202)])
+                      (is (= {:cached                nil,
+                              :request-time          1,
+                              :repeatable?           false,
+                              :protocol-version      {:name "HTTP", :major 1, :minor 1},
+                              :streaming?            false,
+                              :http-client           mocked-client
+                              :chunked?              false,
+                              :reason-phrase         "Accepted",
+                              :headers               {"hello" "world"},
+                              :orig-content-encoding nil,
+                              :status                202,
+                              :length                3,
+                              :body                  "ian",
+                              :trace-redirects       []}))
+                      (request {:url         "https://souenzzo.com.br/foo/bar"
+                                :method      :post
+                                :body        {}
+                                :http-client mocked-client}))))
 
 
 
