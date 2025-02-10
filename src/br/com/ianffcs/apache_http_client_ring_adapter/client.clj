@@ -214,7 +214,6 @@
                                          :http-client mocked-client})))))
              (testing "simple get"
                       (let [mocked-client (->http-client (fn [req])
-                                                         (def _r req)
                                                          {:body "ian"}
                                                          :headers {"hello" "world"}
                                                          :status 202)])
