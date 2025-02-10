@@ -6,7 +6,8 @@
     [clojure.java.io :as io]
     [clojure.string :as string]
     [clojure.test :refer [deftest is testing]]
-    [ring.core.protocols :as ring.protocols]))
+    [ring.core.protocols :as ring.protocols])
+  (:import (org.apache.http HttpResponse)))
 
 (defn clj-http-mocked-req [mocked-client req]
   (-> req
@@ -16,7 +17,7 @@
 
 (deftest ->http-client-test-clj-http
   (testing "simple get"
-    (let [mocked-client (->http-client (fn [req]
+    (let [mocked-client (->http-client (fn [_req]
                                          {:body    "1337"
                                           :headers {"hello" "world"}
                                           :status  202}))]
@@ -98,7 +99,7 @@
         http-client (->http-client (fn [req]
                                      (deliver *req (dissoc req :body))
                                      {:body   (reify ring.protocols/StreamableResponseBody
-                                                (write-body-to-stream [this response output-stream]
+                                                (write-body-to-stream [_this _response output-stream]
                                                   (.write output-stream (.getBytes "Hello!"))
                                                   (.close output-stream)))
                                       :status 200}))]
@@ -135,8 +136,7 @@
     (get-in response [:body :is_valid])))
 
 (deftest check-token-example
-  (let [mock-api-handler (fn [{:keys [uri server-name query-string scheme request-method headers]
-                               :as   request}]
+  (let [mock-api-handler (fn [{:keys [query-string]}]
                            (if-let [token (second (re-find #"token=([a-z]+)"
                                                            query-string))]
                              {:body    (json/write-str {:is_valid (string/includes? token "b")})
@@ -153,3 +153,28 @@
              (catch Throwable ex
                (ex-message ex)))))))
 
+(deftest retry-execute-simple
+  (let [counter (atom 0)
+        max-retries 3
+        http-client (->http-client (fn [_req]
+                                     (swap! counter inc)
+                                     {:status 404
+                                      :body   "Can't find"})
+                                   {:retry-interval 0
+                                    :max-retries    max-retries
+                                    :retry-fn       (fn retry-fn
+                                                      [^HttpResponse resp cnt _ctx]
+                                                      (let [resp-status (-> resp
+                                                                            .getStatusLine
+                                                                            .getStatusCode)]
+                                                        (if (and (= 404 resp-status)
+                                                                 (> max-retries cnt))
+                                                          (do (prn "Retrying..." cnt)
+                                                              true)
+                                                          false)))})]
+    (is (= "clj-http: status 404" (try (client/request {:method      :get
+                                                        :url         "https://example.com/bar?car=33"
+                                                        :http-client http-client})
+                                       (catch Throwable t
+                                         (ex-message t)))))
+    (is (= max-retries (dec @counter)))))
