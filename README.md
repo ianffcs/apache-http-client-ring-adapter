@@ -15,7 +15,7 @@ This project intends to facilitate the creation of `org.apache.http.client.Close
 * Add to your `deps.edn`
 ```clojure
 br.com.ianffcs/apache-http-client-ring-adapter {:git/url "https://github.com/ianffcs/apache-http-client-ring-adapter.git"
-                                                :sha     "7fa01cb540b8cbc35d51be2a22e9c66db948b731"}
+                                                :sha     "8d9ab357dbb08281d3be585d2d4d116dec79be1a"}
 ```
 
 * Require it
@@ -100,3 +100,7 @@ But in an ring server that listen many ports with many hosts, it will be a good 
                  {:status 200
                   :body   "mocked response"}))
 ```
+
+# Changelog
+
+* 8d9ab357dbb08281d3be585d2d4d116dec79be1a => Added retry-fn and test for retry strategies.
